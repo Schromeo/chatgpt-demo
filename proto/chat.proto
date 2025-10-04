@@ -16,3 +16,10 @@ message FilterReply { bool allowed = 1; string cleaned = 2; }
 service FilterService {
   rpc Filter(FilterRequest) returns (FilterReply);
 }
+/******** 新增：Token ********/
+message TokenRequest { string user_id = 1; int32 tokens = 2; }
+message TokenReply { bool allowed = 1; int64 remaining = 2; }
+
+service TokenService {
+  rpc CheckAndInc(TokenRequest) returns (TokenReply);
+}
