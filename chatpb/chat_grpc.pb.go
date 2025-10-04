@@ -119,3 +119,105 @@ var LLMService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "chat.proto",
 }
+
+const (
+	FilterService_Filter_FullMethodName = "/chat.FilterService/Filter"
+)
+
+// FilterServiceClient is the client API for FilterService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type FilterServiceClient interface {
+	Filter(ctx context.Context, in *FilterRequest, opts ...grpc.CallOption) (*FilterReply, error)
+}
+
+type filterServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewFilterServiceClient(cc grpc.ClientConnInterface) FilterServiceClient {
+	return &filterServiceClient{cc}
+}
+
+func (c *filterServiceClient) Filter(ctx context.Context, in *FilterRequest, opts ...grpc.CallOption) (*FilterReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FilterReply)
+	err := c.cc.Invoke(ctx, FilterService_Filter_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// FilterServiceServer is the server API for FilterService service.
+// All implementations must embed UnimplementedFilterServiceServer
+// for forward compatibility.
+type FilterServiceServer interface {
+	Filter(context.Context, *FilterRequest) (*FilterReply, error)
+	mustEmbedUnimplementedFilterServiceServer()
+}
+
+// UnimplementedFilterServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedFilterServiceServer struct{}
+
+func (UnimplementedFilterServiceServer) Filter(context.Context, *FilterRequest) (*FilterReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Filter not implemented")
+}
+func (UnimplementedFilterServiceServer) mustEmbedUnimplementedFilterServiceServer() {}
+func (UnimplementedFilterServiceServer) testEmbeddedByValue()                       {}
+
+// UnsafeFilterServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to FilterServiceServer will
+// result in compilation errors.
+type UnsafeFilterServiceServer interface {
+	mustEmbedUnimplementedFilterServiceServer()
+}
+
+func RegisterFilterServiceServer(s grpc.ServiceRegistrar, srv FilterServiceServer) {
+	// If the following call pancis, it indicates UnimplementedFilterServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&FilterService_ServiceDesc, srv)
+}
+
+func _FilterService_Filter_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FilterRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(FilterServiceServer).Filter(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: FilterService_Filter_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(FilterServiceServer).Filter(ctx, req.(*FilterRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// FilterService_ServiceDesc is the grpc.ServiceDesc for FilterService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var FilterService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "chat.FilterService",
+	HandlerType: (*FilterServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Filter",
+			Handler:    _FilterService_Filter_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "chat.proto",
+}

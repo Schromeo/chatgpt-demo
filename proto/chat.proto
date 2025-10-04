@@ -8,3 +8,11 @@ message ChatResponse { string reply = 1; }
 service LLMService {
   rpc Generate(ChatRequest) returns (ChatResponse);
 }
+
+/******** 新增：Filter ********/
+message FilterRequest { string text = 1; }
+message FilterReply { bool allowed = 1; string cleaned = 2; }
+
+service FilterService {
+  rpc Filter(FilterRequest) returns (FilterReply);
+}

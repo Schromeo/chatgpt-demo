@@ -13,28 +13,47 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func main() {
-	// 使用 insecure.NewCredentials() 来关闭 TLS（仅本地 demo）
-	cc, err := grpc.Dial("localhost:50055",
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+func mustDial(addr string) *grpc.ClientConn {
+	cc, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cc.Close()
+	return cc
+}
 
-	c := pb.NewLLMServiceClient(cc)
-
-	text := "你好，世界"
+func main() {
+	text := "这是一条最小链路测试"
 	if len(os.Args) > 1 {
 		text = os.Args[1]
 	}
 
+	// 1) 连接 Filter 和 LLM
+	filterConn := mustDial("localhost:50052")
+	defer filterConn.Close()
+	llmConn := mustDial("localhost:50055")
+	defer llmConn.Close()
+
+	filterCli := pb.NewFilterServiceClient(filterConn)
+	llmCli := pb.NewLLMServiceClient(llmConn)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	resp, err := c.Generate(ctx, &pb.ChatRequest{UserId: "u1", Text: text})
+	// 2) 先 Filter
+	fr, err := filterCli.Filter(ctx, &pb.FilterRequest{Text: text})
+	if err != nil {
+		log.Fatal("filter error:", err)
+	}
+	if !fr.Allowed {
+		fmt.Println("❌ 文本被过滤（包含违禁词）：", text)
+		return
+	}
+
+	// 3) 再调用 LLM（用清洗后的文本）
+	resp, err := llmCli.Generate(ctx, &pb.ChatRequest{UserId: "u1", Text: fr.Cleaned})
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("✅ 过滤后文本：", fr.Cleaned)
 	fmt.Println("LLM reply =>", resp.Reply)
 }
