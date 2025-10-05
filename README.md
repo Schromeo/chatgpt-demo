@@ -1,302 +1,259 @@
 # ChatGPT 微服务 Demo（Go + gRPC + Gin）
 
-> 本 README 记录我们从零搭建“HTTP 网关 → gRPC 微服务（Filter → Token → LLM Stub）”的全部步骤、测试方法与常见坑，便于复现与口述面试亮点。
+> 一条命令拉起：HTTP 网关（Gin） → gRPC 微服务（Filter → Token → LLM/OpenAI → History），并带前端页面、限流、配额对齐与常见问题排查。
 
 ---
 
-## 一、项目概览
+## 目录
+
+* [项目概览](#项目概览)
+* [快速开始（最少步骤）](#快速开始最少步骤)
+* [依赖与环境变量](#依赖与环境变量)
+* [启动脚本用法](#启动脚本用法)
+* [服务与端口](#服务与端口)
+* [HTTP API](#http-api)
+* [前端页面](#前端页面)
+* [数据层（MySQL + Redis）](#数据层mysql--redis)
+* [配额与费用（真实 token 对齐）](#配额与费用真实-token-对齐)
+* [常见问题排查](#常见问题排查)
+* [Roadmap](#roadmap)
+
+---
+
+## 项目概览
 
 * **语言/框架**：Go + gRPC + Gin
-* **服务组成**：
+* **网关治理**：分段超时（Filter/Token 短、LLM 长）、错误分级（402/429/500）、本地令牌桶限流（默认 3 RPM）
+* **LLM**：`llmserver` 直连 OpenAI（Chat Completions），可通过 `OPENAI_MODEL` 切换模型
+* **配额**：`tokenserver`（Redis 版）支持**预占 + 真实用量对齐**，允许负数回冲，按日 TTL 重置
+* **历史**：`historyserver` 持久化到 MySQL，并用 Redis 缓存**最近 N 条**
+* **前端**：极简 SPA（`web/index.html`），与网关同端口服务
+* **IDL**：`proto/chat.proto`（生成到 `chatpb/`，**勿手改**）
 
-  * `gateway`：HTTP 入口（Gin），编排调用 gRPC：Filter → Token → LLM
-  * `filterserver`：文本过滤与清洗
-  * `tokenserver`：配额检查（内存版；后续可换 Redis）
-  * `llmserver`：LLM Stub（回声回复，用于先跑通链路）
-* **IDL**：`proto/chat.proto`（定义消息与服务接口）
-* **生成代码目录**：`chatpb/`（由 `protoc` 生成，**勿手改**）
-
-端口约定：
-
-* Token：`:50051`
-* Filter：`:50052`
-* LLM：`:50055`
-* Gateway：`:8080`
-
----
-
-## 二、目录结构
+项目结构：
 
 ```
 chatgpt-demo/
-├─ proto/chat.proto         # protobuf 接口契约（LLM/Filter/Token）
-├─ chatpb/                  # protoc 生成的 gRPC/Proto Go 代码（自动生成）
-├─ llmserver/main.go        # LLM Stub 服务（Echo）
-├─ filterserver/main.go     # 文本过滤服务
-├─ tokenserver/main.go      # 配额服务（内存实现）
-└─ gateway/main.go          # HTTP 网关（Gin）→ gRPC 串联
+├─ proto/chat.proto          # protobuf 接口契约
+├─ chatpb/                   # protoc 生成的 Go 代码（自动生成）
+├─ tokenserver/              # Token（Redis 计数）
+├─ historyserver/            # 历史（MySQL + Redis 缓存）
+├─ filterserver/             # 文本过滤/清洗
+├─ llmserver/                # LLM（OpenAI 接入）
+├─ gateway/                  # HTTP 网关（Gin）
+├─ web/index.html            # 前端页面（同端口服务）
+└─ scripts/dev.sh            # 一键启动/停止/看日志
 ```
 
 ---
 
-## 三、环境与依赖
+## 快速开始（最少步骤）
 
-* Go ≥ 1.20（建议 1.22）
-* `protoc`（Protocol Buffers 编译器）
-* 代码生成插件：
+1. **准备外部依赖**（二选一）：
 
-  ```bash
-  go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-  go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-  ```
-* 确保 `$(go env GOPATH)/bin` 在 PATH：
+   * 本机已装 **Redis**（默认 `localhost:6379`）与 **MySQL 8**（默认 `root:root@localhost:3306`）。
+   * 或自行用 Docker 起 Redis/MySQL（非必需）。
+2. **设置 OpenAI Key**：
 
-  ```bash
-  echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc
-  source ~/.zshrc
-  ```
+   ```bash
+   export OPENAI_API_KEY="你的key"
+   export OPENAI_MODEL="gpt-4o-mini"   # 可选
+   ```
+3. **一条命令拉起全部服务**：
 
-生成代码：
+   ```bash
+   scripts/dev.sh up
+   ```
+4. 打开前端：`http://localhost:8080/`
 
-```bash
-protoc -I=proto --go_out=. --go-grpc_out=. proto/chat.proto
-```
+> 初次运行会自动执行 `protoc` 生成代码。若未安装 `protoc`，脚本会跳过生成（但你修改了 proto 后需要安装并重新生成）。
 
-> 如遇 PATH 问题，可临时指定插件：
->
-> ```bash
-> protoc -I=proto \
->   --plugin=protoc-gen-go=$(go env GOPATH)/bin/protoc-gen-go \
->   --plugin=protoc-gen-go-grpc=$(go env GOPATH)/bin/protoc-gen-go-grpc \
->   --go_out=. --go-grpc_out=. \
->   proto/chat.proto
-> ```
+---
 
-依赖拉取：
+## 依赖与环境变量
+
+* **Go**：≥ 1.20（建议 1.22）
+* **protoc**：用于从 `.proto` 生成 Go 代码
+* **Redis**：默认 `localhost:6379`
+* **MySQL**：默认 `root:root@localhost:3306`，数据库 `chatdb`
+
+环境变量（可在 `~/.zshrc` 里长期配置）：
 
 ```bash
-go get google.golang.org/grpc@latest \
-       google.golang.org/grpc/credentials/insecure@latest \
-       github.com/gin-gonic/gin@latest
+# OpenAI
+export OPENAI_API_KEY=sk-xxxx
+export OPENAI_MODEL=gpt-4o-mini
 
-go mod tidy
+# Redis / MySQL（按你的环境调整）
+export REDIS_ADDR=localhost:6379
+export MYSQL_DSN='root:root@tcp(localhost:3306)/chatdb?parseTime=true&charset=utf8mb4,utf8'
 ```
 
 ---
 
-## 四、逐步里程碑（从零到完整链路）
+## 启动脚本用法
 
-### 里程碑 0：环境自检
-
-```bash
-go version
-protoc --version
-```
-
-### 里程碑 1：定义最小 LLMService（Echo）
-
-* `proto/chat.proto` 定义 `LLMService.Generate(ChatRequest) -> ChatResponse`
-* 运行 `protoc ...` 生成 `chatpb/`
-* 实现 `llmserver/main.go`：注册并监听 `:50055`
-* 写 `client/main.go`：用 `insecure.NewCredentials()` 拨号并调用
-
-**测试**：
+脚本位于 `scripts/dev.sh`，后台运行所有服务并把日志写到 `logs/`。
 
 ```bash
-# 终端A
-go run ./llmserver
-# 终端B
-go run ./client "这是一条最小链路测试"
-# 期望
-LLM reply => Echo: 这是一条最小链路测试
+# 启动全部服务（默认命令）
+scripts/dev.sh up
+
+# 停止全部服务
+scripts/dev.sh down
+
+# 重启全部服务
+scripts/dev.sh restart
+
+# 查看状态
+scripts/dev.sh status
+
+# 查看日志（单个/全部）
+scripts/dev.sh logs gateway
+scripts/dev.sh logs            # tail -F 所有日志
+
+# （可选）用 Docker 起依赖
+scripts/dev.sh deps up   # 无 Docker 会自动提示并跳过
+scripts/dev.sh deps down
 ```
 
-### 里程碑 2：加入 FilterService（违禁词与清洗）
-
-* 扩展 `proto/chat.proto`：添加 `FilterService.Filter`
-* 生成代码 → 实现 `filterserver/main.go`（监听 `:50052`）
-* 客户端先调 Filter 再调 LLM
-
-**测试**：
-
-```bash
-# 终端A
-go run ./filterserver
-# 终端B
-go run ./llmserver
-# 终端C
-go run ./client "Hello   world   from   Go!"    # 清洗成单空格
-# 期望
-✅ 过滤后文本： Hello world from Go!
-LLM reply => Echo: Hello world from Go!
-
-# 含违禁词
-go run ./client "this has foo inside"
-# 期望：
-❌ 文本被过滤（包含违禁词）： this has foo inside
-```
-
-### 里程碑 3：加 HTTP 网关（Gin）
-
-* 新建 `gateway/main.go`：
-
-  * 启动时各拨一个 gRPC 长连接：Filter/LLM
-  * 提供 `POST /chat`：`{user_id, text}`
-  * 顺序：Filter → LLM → 返回 JSON
-
-**测试**：
-
-```bash
-# 终端A
-go run ./filterserver
-# 终端B
-go run ./llmserver
-# 终端C
-go run ./gateway
-
-# 正常文本
-curl -s -X POST http://localhost:8080/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"user_id":"u1","text":"Hello   world   from   Go!"}'
-# 期望
-{"cleaned":"Hello world from Go!","reply":"Echo: Hello world from Go!"}
-
-# 违禁词
-curl -s -X POST http://localhost:8080/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"user_id":"u1","text":"this has foo inside"}'
-# 期望
-{"error":"text blocked by filter"}
-```
-
-### 里程碑 4：加入 TokenService（配额内存版）
-
-* 扩展 `proto/chat.proto`：`TokenService.CheckAndInc`
-* 生成代码 → 实现 `tokenserver/main.go`（监听 `:50051`）
-* 网关在 Filter 后、LLM 前调用 Token：每次假定消耗 50 tokens
-
-**测试**：
-
-```bash
-# 终端A/B/C/D 分别运行四个服务
-go run ./filterserver
-go run ./tokenserver
-go run ./llmserver
-go run ./gateway
-
-# 连续 5 次请求（limit=200，每次50，第5次将超限）
-for i in {1..5}; do
-  curl -s -X POST http://localhost:8080/chat \
-    -H 'Content-Type: application/json' \
-    -d '{"user_id":"u1","text":"quick call"}'; echo; done
-
-# 期望：前四次 200，附带 remaining 值递减；最后一次 429：
-{"error":"quota exceeded","remaining":-50}
-```
+> 默认限流：网关单进程 **3 RPM**（与 Free 账户限速对齐）。
 
 ---
 
-## 五、HTTP API 说明（当前网关）
+## 服务与端口
+
+| 服务              |    端口 | 说明                           |
+| --------------- | ----: | ---------------------------- |
+| `gateway`       |  8080 | HTTP 网关（前端同端口）               |
+| `tokenserver`   | 50051 | 配额（Redis 计数，按日 TTL，允许负数回冲）   |
+| `filterserver`  | 50052 | 文本过滤/清洗                      |
+| `historyserver` | 50054 | 历史持久化（MySQL）+ 最近缓存（Redis）    |
+| `llmserver`     | 50055 | LLM（OpenAI Chat Completions） |
+
+---
+
+## HTTP API
 
 ### `POST /chat`
 
-**Request JSON**
+请求体：
+
+```json
+{ "user_id": "u1", "text": "Hello   world   from   Go!" }
+```
+
+成功响应（示例）：
 
 ```json
 {
-  "user_id": "u1",
-  "text": "Hello   world   from   Go!"
+  "cleaned": "Hello world from Go!",
+  "reply": "...",
+  "usage": {"prompt_tokens": 12, "completion_tokens": 25, "total_tokens": 37},
+  "remaining": 4963
 }
 ```
 
-**Responses**
+错误响应（示例）：
 
-* `200 OK`
+* `400`：`{"error":"bad json or missing user_id"}` / `{"error":"text blocked by filter"}`
+* `402`：`{"error":"insufficient_quota"}`（OpenAI 项目无额度）
+* `429`：`{"error":"rate_limited"}`（速率限制；指数回退后重试）
+* `500`：`{"error":"llm failed","detail":"..."}` / `token failed` / `filter failed`
 
-  ```json
-  { "cleaned": "Hello world from Go!", "reply": "Echo: Hello world from Go!", "remaining": 150 }
-  ```
-* `400 Bad Request`
+### `GET /history?user_id=u1`
 
-  ```json
-  { "error": "bad json or missing user_id" }
-  ```
+返回最近的消息（倒序写入，接口按时间顺序返回）。
 
-  或
-
-  ```json
-  { "error": "text blocked by filter" }
-  ```
-* `429 Too Many Requests`
-
-  ```json
-  { "error": "quota exceeded", "remaining": -50 }
-  ```
-* `500 Internal Server Error`
-
-  ```json
-  { "error": "filter failed" }
-  ```
-
-  / `llm failed` / `token failed`
+```json
+[
+  {"role":"user","text":"..."},
+  {"role":"assistant","text":"..."}
+]
+```
 
 ### `GET /health`
 
-* 返回 `ok`（网关存活检查）
+返回 `ok`。
 
 ---
 
-## 六、常见问题与排查
+## 前端页面
 
-* **`protoc-gen-go: program not found`**：
+* 位置：`web/index.html`（由网关直接服务）。
+* 访问：`http://localhost:8080/`
+* 功能：输入 `user_id` 与 `text`，发送到 `/chat`，展示回复与用量；自动拉取 `/history`。
 
-  * 安装插件，并把 `$(go env GOPATH)/bin` 加入 PATH；或在 protoc 命令里显式 `--plugin=...`
-* **`google.golang.org/grpc` 报错**：
-
-  * 执行 `go get google.golang.org/grpc@latest && go mod tidy`
-* **`WithInsecure` 被废弃**：
-
-  * 使用 `credentials/insecure`：
-
-    ```go
-    grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-    ```
-* **端口被占用**：
-
-  * 修改服务监听端口，或查 `lsof -i :PORT` 后释放
-* **调用卡住**：
-
-  * 确认在客户端/网关使用 `context.WithTimeout` 设置超时
+> 路由规则：未命中后端的请求通过 `NoRoute` 回退到 `index.html`，便于 SPA。
 
 ---
 
-## 七、面试可讲亮点（本 Demo 已具备）
+## 数据层（MySQL + Redis)
 
-* **IDL 优先**：以 proto 定义服务与消息，生成强类型客户端/服务端代码
-* **服务编排与前置治理**：在 LLM 前做文本过滤与配额拦截，节省计算资源
-* **超时与错误语义**：全链路 `context` 超时；HTTP 语义化状态码（400/429/500）
-* **可扩展性**：LLM Stub 易于切换为真实模型；Token 可替换 Redis；History 可上 MySQL
-* **可观测性挂载点**：在网关统一打日志、metrics、trace 最方便
+### MySQL（历史持久化）
+
+初始化 SQL：
+
+```sql
+CREATE DATABASE IF NOT EXISTS chatdb;
+USE chatdb;
+CREATE TABLE IF NOT EXISTS chat_history (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id VARCHAR(64) NOT NULL,
+  role ENUM('user','assistant') NOT NULL,
+  text TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+```
+
+`historyserver` 读取 `MYSQL_DSN` 连接 MySQL；`List` 命中 Redis 直接返回，Miss 时查表（最近 N 条）。
+
+### Redis（配额与缓存）
+
+* 配额 Key：`token:{user}:{yyyy-mm-dd}`，使用 `INCRBY`；首次设置 `EXPIRE`（默认 48h）。
+* 允许**负数回冲**（用于把“预占 200”对齐到真实 token 用量）。
+* 最近对话缓存：`history:{user}` 使用 `LPUSH + LTRIM`，默认缓存最近 40 条。
 
 ---
 
-## 八、下一步（Roadmap）
+## 配额与费用（真实 token 对齐）
 
-1. **TokenService → Redis**（计数 + TTL 按天重置；`go-redis`）
-2. **HistoryService → MySQL**（保存/分页查询聊天历史）
-3. **SSE/WebSocket 流式回复**（更贴近真实 Chat 体验）
-4. **Prometheus + Grafana**（QPS、p95 延迟、命中率、错误码分布）
-5. **统一日志/TraceID**（网关生成 trace_id，gRPC metadata 透传）
-6. **容器化与编排**（Docker Compose → Kubernetes）
+* 网关在调用 LLM 前先**预占** `200` 个 token，确保超配额能提前拦截。
+* LLM 返回 `usage.total_tokens` 后，网关计算 `delta = total - 200`，再次调用 Token：
 
----
+  * `delta > 0`：**补扣**
+  * `delta < 0`：**回冲**（负数），服务端下限保护到 0
+* 好处：避免固定扣减带来的“高估/低估”，成本与配额实时一致。
 
-## 九、清理
-
-结束开发后可 Ctrl + C 结束各进程；或统一脚本化管理多进程（后续可补 `Makefile`/`Taskfile`）。
+> 免费层一般有 **3 RPM** 限速与配额门槛；充值/升级后问题即可缓解。我们在网关内置了 3 RPM 令牌桶，防止误触上限。
 
 ---
 
-## 十、License
+## 常见问题排查
 
-自用学习示例，未附带 License。按需添加。
+* **前端访问不到**：确认 `web/index.html` 路径正确；`curl -I http://localhost:8080/` 是否 `200 OK`。
+* **`llm failed` + `insufficient_quota`**：OpenAI 项目无额度；前往 Billing 充值或选择正确 Project。
+* **429 `rate_limited`**：触发速率限制；降低并发/频率或等更高 usage tier。
+* **`protoc-gen-go: program not found`**：安装插件并把 `$(go env GOPATH)/bin` 加入 PATH。
+* **MySQL 连接失败**：检查 `MYSQL_DSN`；root 无密码时去掉 `:root@`；确认 `chatdb` 与表已创建。
+* **Redis 连接失败**：确认 `REDIS_ADDR`，`redis-cli ping` 预期 `PONG`。
+* **端口占用**：修改服务端口或释放端口（macOS：`lsof -i :8080`）。
+
+---
+
+## Roadmap
+
+1. **可观测性**：Prometheus 指标（QPS/延迟/错误码）、结构化日志（zap）、trace_id 透传
+2. **SSE/WebSocket 流式**：`/chat/stream`，边生成边推送
+3. **Docker Compose**：一键容器化 Redis/MySQL/五个服务
+4. **KeywordService**：关键词抽取/检索增强示例
+5. **分布式限流**：基于 Redis 的全局令牌桶（多实例共享）
+
+---
+
+## 变更日志（关键里程碑）
+
+* v0.4：加 History（MySQL+Redis 缓存）；网关保存历史；前端页面上线
+* v0.3：Token 切 Redis，支持预占 + 真实用量对齐、负数回冲
+* v0.2：接入 OpenAI；网关分段超时 + 错误分级 + 本地 3 RPM 限流
+* v0.1：最小链路（Filter → LLM Stub）+ Gin 网关 + 客户端验证
