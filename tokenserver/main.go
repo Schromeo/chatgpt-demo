@@ -2,67 +2,88 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
-	"sync"
+	"os"
+	"time"
 
 	pb "chatgpt-demo/chatpb"
 
+	"github.com/redis/go-redis/v9"
 	"google.golang.org/grpc"
 )
 
 type server struct {
 	pb.UnimplementedTokenServiceServer
-	mu    sync.Mutex
-	used  map[string]int64 // 已用 token 数（按 user_id）
-	limit int64            // 当日总配额（简化：无 TTL；后续可接 Redis + 按天重置）
+	rdb   *redis.Client
+	limit int64
 }
 
+func dayKey(user string) string {
+	return fmt.Sprintf("token:%s:%s", user, time.Now().Format("2006-01-02"))
+}
+
+// seconds until next 02:00 (给足一整天 + 缓冲，简单起见用 48h)
+func ttl() time.Duration { return 48 * time.Hour }
+
 func (s *server) CheckAndInc(ctx context.Context, in *pb.TokenRequest) (*pb.TokenReply, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	key := dayKey(in.UserId)
+	delta := int64(in.Tokens)
 
-	if s.used == nil {
-		s.used = make(map[string]int64)
-	}
-	cur := s.used[in.UserId]
-	next := cur + int64(in.Tokens)
-
-	// 下限保护：允许负数“回冲”但不低于 0
-	if next < 0 {
-		next = 0
+	// 先增（或回冲），再校验；正向超限则回滚
+	val, err := s.rdb.IncrBy(ctx, key, delta).Result()
+	if err != nil {
+		return nil, err
 	}
 
-	// 是否允许本次变更：
-	// - 正值（消耗）：只有不超过 limit 才写入并允许
-	// - 负值或 0（回冲/对齐）：总是允许并写入
+	// 设置 TTL（仅首次/无 TTL 时）
+	_ = s.rdb.ExpireNX(ctx, key, ttl()).Err()
+
+	// 下限保护：如变成负数，纠正回 0
+	if val < 0 {
+		diff := -val
+		if err := s.rdb.IncrBy(ctx, key, diff).Err(); err != nil {
+			return nil, err
+		}
+		val = 0
+	}
+
+	// 超限判断（仅正向消耗时）
 	allowed := true
-	if in.Tokens > 0 {
-		allowed = next <= s.limit
+	if delta > 0 && val > s.limit {
+		allowed = false
+		// 回滚刚才的增量
+		_ = s.rdb.IncrBy(ctx, key, -delta).Err()
+		val, _ = s.rdb.Get(ctx, key).Int64()
 	}
 
-	if allowed {
-		s.used[in.UserId] = next
-		// 如果不允许，则不落库，保持 cur 不变
-	}
-
-	remaining := s.limit - s.used[in.UserId]
-	return &pb.TokenReply{
-		Allowed:   allowed,
-		Remaining: remaining,
-	}, nil
+	remaining := s.limit - val
+	return &pb.TokenReply{Allowed: allowed, Remaining: remaining}, nil
 }
 
 func main() {
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		addr = "localhost:6379"
+	}
+	limit := int64(5000) // 可用环境变量配置
+	if v := os.Getenv("DAILY_LIMIT"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &limit); n == 0 || err != nil {
+		}
+	}
+
+	rdb := redis.NewClient(&redis.Options{Addr: addr})
+
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	s := grpc.NewServer()
-	pb.RegisterTokenServiceServer(s, &server{
-		limit: 5000, // 示例：每用户每日 5000（无 TTL；后续可接 Redis + EXPIRE）
-	})
-	log.Println("Token service listening :50051")
+	pb.RegisterTokenServiceServer(s, &server{rdb: rdb, limit: limit})
+
+	log.Println("Token (Redis) service @ :50051, limit =", limit, "redis =", addr)
 	if err := s.Serve(lis); err != nil {
 		log.Fatal(err)
 	}

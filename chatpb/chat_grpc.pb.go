@@ -323,3 +323,143 @@ var TokenService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "chat.proto",
 }
+
+const (
+	HistoryService_Save_FullMethodName = "/chat.HistoryService/Save"
+	HistoryService_List_FullMethodName = "/chat.HistoryService/List"
+)
+
+// HistoryServiceClient is the client API for HistoryService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type HistoryServiceClient interface {
+	Save(ctx context.Context, in *SaveRequest, opts ...grpc.CallOption) (*SaveReply, error)
+	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListReply, error)
+}
+
+type historyServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewHistoryServiceClient(cc grpc.ClientConnInterface) HistoryServiceClient {
+	return &historyServiceClient{cc}
+}
+
+func (c *historyServiceClient) Save(ctx context.Context, in *SaveRequest, opts ...grpc.CallOption) (*SaveReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SaveReply)
+	err := c.cc.Invoke(ctx, HistoryService_Save_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *historyServiceClient) List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListReply, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReply)
+	err := c.cc.Invoke(ctx, HistoryService_List_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// HistoryServiceServer is the server API for HistoryService service.
+// All implementations must embed UnimplementedHistoryServiceServer
+// for forward compatibility.
+type HistoryServiceServer interface {
+	Save(context.Context, *SaveRequest) (*SaveReply, error)
+	List(context.Context, *ListRequest) (*ListReply, error)
+	mustEmbedUnimplementedHistoryServiceServer()
+}
+
+// UnimplementedHistoryServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedHistoryServiceServer struct{}
+
+func (UnimplementedHistoryServiceServer) Save(context.Context, *SaveRequest) (*SaveReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Save not implemented")
+}
+func (UnimplementedHistoryServiceServer) List(context.Context, *ListRequest) (*ListReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
+}
+func (UnimplementedHistoryServiceServer) mustEmbedUnimplementedHistoryServiceServer() {}
+func (UnimplementedHistoryServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeHistoryServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to HistoryServiceServer will
+// result in compilation errors.
+type UnsafeHistoryServiceServer interface {
+	mustEmbedUnimplementedHistoryServiceServer()
+}
+
+func RegisterHistoryServiceServer(s grpc.ServiceRegistrar, srv HistoryServiceServer) {
+	// If the following call pancis, it indicates UnimplementedHistoryServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&HistoryService_ServiceDesc, srv)
+}
+
+func _HistoryService_Save_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HistoryServiceServer).Save(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HistoryService_Save_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HistoryServiceServer).Save(ctx, req.(*SaveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HistoryService_List_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HistoryServiceServer).List(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HistoryService_List_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HistoryServiceServer).List(ctx, req.(*ListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// HistoryService_ServiceDesc is the grpc.ServiceDesc for HistoryService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var HistoryService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "chat.HistoryService",
+	HandlerType: (*HistoryServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "Save",
+			Handler:    _HistoryService_Save_Handler,
+		},
+		{
+			MethodName: "List",
+			Handler:    _HistoryService_List_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "chat.proto",
+}

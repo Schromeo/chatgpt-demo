@@ -29,19 +29,25 @@ func main() {
 	defer tokenConn.Close()
 	filterConn := mustDial("localhost:50052")
 	defer filterConn.Close()
+	historyConn := mustDial("localhost:50054")
+	defer historyConn.Close()
 	llmConn := mustDial("localhost:50055")
 	defer llmConn.Close()
 
 	// gRPC 客户端
 	tokenCli := pb.NewTokenServiceClient(tokenConn)
 	filterCli := pb.NewFilterServiceClient(filterConn)
+	historyCli := pb.NewHistoryServiceClient(historyConn)
 	llmCli := pb.NewLLMServiceClient(llmConn)
 
 	// Gin 路由
 	r := gin.Default()
 
-	// 简单限流（与 Free 3 RPM 对齐；多实例需用 Redis 做分布式限流）
-	limiter := rate.NewLimiter(rate.Every(time.Minute/3), 3) // 3次/分钟，突发3
+	// 静态前端（可选）：访问 http://localhost:8080/
+	r.StaticFile("/", "./web/index.html")
+
+	// 简单限流（与 Free 3 RPM 对齐；多实例需分布式限流）
+	limiter := rate.NewLimiter(rate.Every(time.Minute/3), 3) // 3 次/分钟，突发 3
 
 	// 请求体
 	type chatReq struct {
@@ -49,12 +55,29 @@ func main() {
 		Text   string `json:"text"`
 	}
 
-	// 健康检查（可选）
+	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.String(http.StatusOK, "ok")
 	})
 
-	// 核心入口：HTTP → (Filter → Token → LLM → Token 对齐)
+	// 查询历史
+	r.GET("/history", func(c *gin.Context) {
+		user := c.Query("user_id")
+		if user == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing user_id"})
+			return
+		}
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)
+		defer cancel()
+		resp, err := historyCli.List(ctx, &pb.ListRequest{UserId: user, Limit: 20})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "history failed", "detail": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, resp.Items)
+	})
+
+	// 核心入口：HTTP → (Filter → Token 预占 → LLM → Token 对齐 → Save History)
 	r.POST("/chat", func(c *gin.Context) {
 		// 限流
 		if err := limiter.Wait(c.Request.Context()); err != nil {
@@ -89,7 +112,7 @@ func main() {
 		tctx, tcancel := context.WithTimeout(root, 800*time.Millisecond)
 		defer tcancel()
 
-		const preReserve = int32(200) // 先预占200 tokens，调用后再用真实用量对齐
+		const preReserve = int32(200) // 先预占 200 tokens，调用后用真实用量对齐
 		tr1, err := tokenCli.CheckAndInc(tctx, &pb.TokenRequest{
 			UserId: req.UserID, Tokens: preReserve,
 		})
@@ -147,7 +170,13 @@ func main() {
 			}
 		}
 
-		// 5) 返回结果（包含 usage 便于对账/展示）
+		// 5) 保存历史（非阻塞性，失败也不影响本次响应）
+		hctx, hcancel := context.WithTimeout(root, 800*time.Millisecond)
+		defer hcancel()
+		_, _ = historyCli.Save(hctx, &pb.SaveRequest{UserId: req.UserID, Role: "user", Text: req.Text})
+		_, _ = historyCli.Save(hctx, &pb.SaveRequest{UserId: req.UserID, Role: "assistant", Text: lr.GetReply()})
+
+		// 6) 返回结果（包含 usage 便于对账/展示）
 		c.JSON(http.StatusOK, gin.H{
 			"cleaned": fr.GetCleaned(),
 			"reply":   lr.GetReply(),

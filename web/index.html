@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh">
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ChatGPT Demo</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px;}
+  .msg{padding:10px 12px;border-radius:12px;margin:8px 0;max-width:80%;}
+  .user{background:#e6f2ff;margin-left:auto;}
+  .bot{background:#f3f4f6;}
+  .row{display:flex;gap:8px}
+  input,button{font-size:16px;padding:10px 12px}
+  #usage{color:#666;font-size:14px;margin-top:8px}
+</style>
+<body>
+  <h2>ChatGPT 微服务 Demo</h2>
+  <div class="row">
+    <input id="uid" placeholder="user_id" value="u1">
+    <input id="text" placeholder="说点什么…" style="flex:1">
+    <button id="send">发送</button>
+  </div>
+  <div id="usage"></div>
+  <h3>对话</h3>
+  <div id="chat"></div>
+  <script>
+    const chat = document.getElementById('chat');
+    const uid = document.getElementById('uid');
+    const text = document.getElementById('text');
+    const usage = document.getElementById('usage');
+
+    async function send(){
+      const body = { user_id: uid.value.trim() || 'u1', text: text.value.trim() };
+      if(!body.text) return;
+      addMsg('user', body.text);
+
+      const res = await fetch('/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const data = await res.json();
+      if(!res.ok){
+        addMsg('bot', `[${data.error}] ${data.detail||''}`.trim());
+        return;
+      }
+      addMsg('bot', data.reply);
+      if(data.usage){
+        usage.textContent = `tokens: prompt=${data.usage.prompt_tokens||0}, completion=${data.usage.completion_tokens||0}, total=${data.usage.total_tokens||0}; remaining=${data.remaining}`;
+      }
+      text.value='';
+      // 可选：刷新最近历史
+      // loadHistory();
+    }
+
+    function addMsg(role, t){
+      const div = document.createElement('div');
+      div.className = 'msg ' + (role==='user'?'user':'bot');
+      div.textContent = t;
+      chat.appendChild(div);
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    async function loadHistory(){
+      const res = await fetch('/history?user_id=' + encodeURIComponent(uid.value||'u1'));
+      if(!res.ok) return;
+      const items = await res.json();
+      chat.innerHTML = '';
+      // 返回为倒序（最近在前），这里按原序展示
+      items.reverse().forEach(it => addMsg(it.role==='user'?'user':'bot', it.text));
+    }
+
+    document.getElementById('send').onclick = send;
+    text.onkeydown = (e)=>{ if(e.key==='Enter') send(); };
+
+    // 初始加载历史
+    loadHistory();
+  </script>
+</body>
+</html>

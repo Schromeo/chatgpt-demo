@@ -21,6 +21,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ******* LLM *******
 type ChatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -142,7 +143,7 @@ func (x *ChatResponse) GetTotalTokens() int32 {
 	return 0
 }
 
-// ******* 新增：Filter *******
+// ******* Filter *******
 type FilterRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Text          string                 `protobuf:"bytes,1,opt,name=text,proto3" json:"text,omitempty"`
@@ -239,7 +240,7 @@ func (x *FilterReply) GetCleaned() string {
 	return ""
 }
 
-// ******* 新增：Token *******
+// ******* Token *******
 type TokenRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -344,6 +345,259 @@ func (x *TokenReply) GetRemaining() int64 {
 	return 0
 }
 
+// ******* History *******
+type SaveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Role          string                 `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	Text          string                 `protobuf:"bytes,3,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SaveRequest) Reset() {
+	*x = SaveRequest{}
+	mi := &file_chat_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SaveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SaveRequest) ProtoMessage() {}
+
+func (x *SaveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SaveRequest.ProtoReflect.Descriptor instead.
+func (*SaveRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SaveRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *SaveRequest) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *SaveRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type SaveReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SaveReply) Reset() {
+	*x = SaveReply{}
+	mi := &file_chat_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SaveReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SaveReply) ProtoMessage() {}
+
+func (x *SaveReply) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SaveReply.ProtoReflect.Descriptor instead.
+func (*SaveReply) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SaveReply) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+type HistoryItem struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Role          string                 `protobuf:"bytes,1,opt,name=role,proto3" json:"role,omitempty"`
+	Text          string                 `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoryItem) Reset() {
+	*x = HistoryItem{}
+	mi := &file_chat_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoryItem) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoryItem) ProtoMessage() {}
+
+func (x *HistoryItem) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoryItem.ProtoReflect.Descriptor instead.
+func (*HistoryItem) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *HistoryItem) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
+func (x *HistoryItem) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+type ListRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Limit         int32                  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListRequest) Reset() {
+	*x = ListRequest{}
+	mi := &file_chat_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListRequest) ProtoMessage() {}
+
+func (x *ListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListRequest.ProtoReflect.Descriptor instead.
+func (*ListRequest) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ListRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *ListRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListReply struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Items         []*HistoryItem         `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListReply) Reset() {
+	*x = ListReply{}
+	mi := &file_chat_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListReply) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListReply) ProtoMessage() {}
+
+func (x *ListReply) ProtoReflect() protoreflect.Message {
+	mi := &file_chat_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListReply.ProtoReflect.Descriptor instead.
+func (*ListReply) Descriptor() ([]byte, []int) {
+	return file_chat_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListReply) GetItems() []*HistoryItem {
+	if x != nil {
+		return x.Items
+	}
+	return nil
+}
+
 var File_chat_proto protoreflect.FileDescriptor
 
 const file_chat_proto_rawDesc = "" +
@@ -369,14 +623,31 @@ const file_chat_proto_rawDesc = "" +
 	"\n" +
 	"TokenReply\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x1c\n" +
-	"\tremaining\x18\x02 \x01(\x03R\tremaining2?\n" +
+	"\tremaining\x18\x02 \x01(\x03R\tremaining\"N\n" +
+	"\vSaveRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\x12\x12\n" +
+	"\x04text\x18\x03 \x01(\tR\x04text\"\x1b\n" +
+	"\tSaveReply\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\"5\n" +
+	"\vHistoryItem\x12\x12\n" +
+	"\x04role\x18\x01 \x01(\tR\x04role\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\"<\n" +
+	"\vListRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"4\n" +
+	"\tListReply\x12'\n" +
+	"\x05items\x18\x01 \x03(\v2\x11.chat.HistoryItemR\x05items2?\n" +
 	"\n" +
 	"LLMService\x121\n" +
 	"\bGenerate\x12\x11.chat.ChatRequest\x1a\x12.chat.ChatResponse2A\n" +
 	"\rFilterService\x120\n" +
 	"\x06Filter\x12\x13.chat.FilterRequest\x1a\x11.chat.FilterReply2C\n" +
 	"\fTokenService\x123\n" +
-	"\vCheckAndInc\x12\x12.chat.TokenRequest\x1a\x10.chat.TokenReplyB\n" +
+	"\vCheckAndInc\x12\x12.chat.TokenRequest\x1a\x10.chat.TokenReply2h\n" +
+	"\x0eHistoryService\x12*\n" +
+	"\x04Save\x12\x11.chat.SaveRequest\x1a\x0f.chat.SaveReply\x12*\n" +
+	"\x04List\x12\x11.chat.ListRequest\x1a\x0f.chat.ListReplyB\n" +
 	"Z\b./chatpbb\x06proto3"
 
 var (
@@ -391,7 +662,7 @@ func file_chat_proto_rawDescGZIP() []byte {
 	return file_chat_proto_rawDescData
 }
 
-var file_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_chat_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_chat_proto_goTypes = []any{
 	(*ChatRequest)(nil),   // 0: chat.ChatRequest
 	(*ChatResponse)(nil),  // 1: chat.ChatResponse
@@ -399,19 +670,29 @@ var file_chat_proto_goTypes = []any{
 	(*FilterReply)(nil),   // 3: chat.FilterReply
 	(*TokenRequest)(nil),  // 4: chat.TokenRequest
 	(*TokenReply)(nil),    // 5: chat.TokenReply
+	(*SaveRequest)(nil),   // 6: chat.SaveRequest
+	(*SaveReply)(nil),     // 7: chat.SaveReply
+	(*HistoryItem)(nil),   // 8: chat.HistoryItem
+	(*ListRequest)(nil),   // 9: chat.ListRequest
+	(*ListReply)(nil),     // 10: chat.ListReply
 }
 var file_chat_proto_depIdxs = []int32{
-	0, // 0: chat.LLMService.Generate:input_type -> chat.ChatRequest
-	2, // 1: chat.FilterService.Filter:input_type -> chat.FilterRequest
-	4, // 2: chat.TokenService.CheckAndInc:input_type -> chat.TokenRequest
-	1, // 3: chat.LLMService.Generate:output_type -> chat.ChatResponse
-	3, // 4: chat.FilterService.Filter:output_type -> chat.FilterReply
-	5, // 5: chat.TokenService.CheckAndInc:output_type -> chat.TokenReply
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	8,  // 0: chat.ListReply.items:type_name -> chat.HistoryItem
+	0,  // 1: chat.LLMService.Generate:input_type -> chat.ChatRequest
+	2,  // 2: chat.FilterService.Filter:input_type -> chat.FilterRequest
+	4,  // 3: chat.TokenService.CheckAndInc:input_type -> chat.TokenRequest
+	6,  // 4: chat.HistoryService.Save:input_type -> chat.SaveRequest
+	9,  // 5: chat.HistoryService.List:input_type -> chat.ListRequest
+	1,  // 6: chat.LLMService.Generate:output_type -> chat.ChatResponse
+	3,  // 7: chat.FilterService.Filter:output_type -> chat.FilterReply
+	5,  // 8: chat.TokenService.CheckAndInc:output_type -> chat.TokenReply
+	7,  // 9: chat.HistoryService.Save:output_type -> chat.SaveReply
+	10, // 10: chat.HistoryService.List:output_type -> chat.ListReply
+	6,  // [6:11] is the sub-list for method output_type
+	1,  // [1:6] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_chat_proto_init() }
@@ -425,9 +706,9 @@ func file_chat_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chat_proto_rawDesc), len(file_chat_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   11,
 			NumExtensions: 0,
-			NumServices:   3,
+			NumServices:   4,
 		},
 		GoTypes:           file_chat_proto_goTypes,
 		DependencyIndexes: file_chat_proto_depIdxs,
