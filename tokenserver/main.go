@@ -40,7 +40,7 @@ func main() {
 	}
 	s := grpc.NewServer()
 	pb.RegisterTokenServiceServer(s, &server{
-		limit: 200, // 演示：每个用户每天 200 token（简化：无 TTL）
+		limit: 5000, // 演示：每个用户每天 5000 token（简化：无 TTL）
 	})
 	log.Println("Token service listening :50051")
 	if err := s.Serve(lis); err != nil {

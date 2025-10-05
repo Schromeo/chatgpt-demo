@@ -57,14 +57,16 @@ func main() {
 			return
 		}
 
-		// 为本次调用设置超时
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
+		// 根上下文（绑定到本次 HTTP 请求）
+		root := c.Request.Context()
 
-		// 1) 文本过滤 / 清洗
-		fr, err := filterCli.Filter(ctx, &pb.FilterRequest{Text: req.Text})
+		// 1) 文本过滤 / 清洗（本地 gRPC，800ms 足够）
+		fctx, fcancel := context.WithTimeout(root, 800*time.Millisecond)
+		defer fcancel()
+
+		fr, err := filterCli.Filter(fctx, &pb.FilterRequest{Text: req.Text})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "filter failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "filter failed", "detail": err.Error()})
 			return
 		}
 		if !fr.GetAllowed() {
@@ -72,13 +74,16 @@ func main() {
 			return
 		}
 
-		// 2) 配额检查（先固定每次 50 tokens；后续可按字数或 tiktoken 计算）
-		const perCallTokens = 50
-		tr, err := tokenCli.CheckAndInc(ctx, &pb.TokenRequest{
+		// 2) 配额检查（本地 gRPC，800ms）
+		tctx, tcancel := context.WithTimeout(root, 800*time.Millisecond)
+		defer tcancel()
+
+		const perCallTokens = int32(50) // 每次先按 50 token 计；后续可改为真实用量
+		tr, err := tokenCli.CheckAndInc(tctx, &pb.TokenRequest{
 			UserId: req.UserID, Tokens: perCallTokens,
 		})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "token failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "token failed", "detail": err.Error()})
 			return
 		}
 		if !tr.GetAllowed() {
@@ -86,12 +91,15 @@ func main() {
 			return
 		}
 
-		// 3) 调用 LLM（目前是 Stub：回声）
-		lr, err := llmCli.Generate(ctx, &pb.ChatRequest{
+		// 3) 调用 LLM（外部服务，给 12s）
+		lctx, lcancel := context.WithTimeout(root, 12*time.Second)
+		defer lcancel()
+
+		lr, err := llmCli.Generate(lctx, &pb.ChatRequest{
 			UserId: req.UserID, Text: fr.GetCleaned(),
 		})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "llm failed"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "llm failed", "detail": err.Error()})
 			return
 		}
 
