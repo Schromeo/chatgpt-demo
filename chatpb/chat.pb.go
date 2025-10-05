@@ -74,10 +74,14 @@ func (x *ChatRequest) GetText() string {
 }
 
 type ChatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Reply         string                 `protobuf:"bytes,1,opt,name=reply,proto3" json:"reply,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Reply string                 `protobuf:"bytes,1,opt,name=reply,proto3" json:"reply,omitempty"`
+	// 新增：本次调用的真实 token 用量
+	PromptTokens     int32 `protobuf:"varint,2,opt,name=prompt_tokens,json=promptTokens,proto3" json:"prompt_tokens,omitempty"`
+	CompletionTokens int32 `protobuf:"varint,3,opt,name=completion_tokens,json=completionTokens,proto3" json:"completion_tokens,omitempty"`
+	TotalTokens      int32 `protobuf:"varint,4,opt,name=total_tokens,json=totalTokens,proto3" json:"total_tokens,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ChatResponse) Reset() {
@@ -115,6 +119,27 @@ func (x *ChatResponse) GetReply() string {
 		return x.Reply
 	}
 	return ""
+}
+
+func (x *ChatResponse) GetPromptTokens() int32 {
+	if x != nil {
+		return x.PromptTokens
+	}
+	return 0
+}
+
+func (x *ChatResponse) GetCompletionTokens() int32 {
+	if x != nil {
+		return x.CompletionTokens
+	}
+	return 0
+}
+
+func (x *ChatResponse) GetTotalTokens() int32 {
+	if x != nil {
+		return x.TotalTokens
+	}
+	return 0
 }
 
 // ******* 新增：Filter *******
@@ -327,9 +352,12 @@ const file_chat_proto_rawDesc = "" +
 	"chat.proto\x12\x04chat\":\n" +
 	"\vChatRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x12\n" +
-	"\x04text\x18\x02 \x01(\tR\x04text\"$\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\"\x99\x01\n" +
 	"\fChatResponse\x12\x14\n" +
-	"\x05reply\x18\x01 \x01(\tR\x05reply\"#\n" +
+	"\x05reply\x18\x01 \x01(\tR\x05reply\x12#\n" +
+	"\rprompt_tokens\x18\x02 \x01(\x05R\fpromptTokens\x12+\n" +
+	"\x11completion_tokens\x18\x03 \x01(\x05R\x10completionTokens\x12!\n" +
+	"\ftotal_tokens\x18\x04 \x01(\x05R\vtotalTokens\"#\n" +
 	"\rFilterRequest\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\"A\n" +
 	"\vFilterReply\x12\x18\n" +

@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	pb "chatgpt-demo/chatpb"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -38,6 +40,9 @@ func main() {
 	// Gin 路由
 	r := gin.Default()
 
+	// 简单限流（与 Free 3 RPM 对齐；多实例需用 Redis 做分布式限流）
+	limiter := rate.NewLimiter(rate.Every(time.Minute/3), 3) // 3次/分钟，突发3
+
 	// 请求体
 	type chatReq struct {
 		UserID string `json:"user_id"`
@@ -49,8 +54,14 @@ func main() {
 		c.String(http.StatusOK, "ok")
 	})
 
-	// 核心入口：HTTP → (Filter → Token → LLM)
+	// 核心入口：HTTP → (Filter → Token → LLM → Token 对齐)
 	r.POST("/chat", func(c *gin.Context) {
+		// 限流
+		if err := limiter.Wait(c.Request.Context()); err != nil {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate_limited"})
+			return
+		}
+
 		var req chatReq
 		if err := c.BindJSON(&req); err != nil || req.UserID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "bad json or missing user_id"})
@@ -60,7 +71,7 @@ func main() {
 		// 根上下文（绑定到本次 HTTP 请求）
 		root := c.Request.Context()
 
-		// 1) 文本过滤 / 清洗（本地 gRPC，800ms 足够）
+		// 1) 文本过滤 / 清洗（本地 gRPC，800ms）
 		fctx, fcancel := context.WithTimeout(root, 800*time.Millisecond)
 		defer fcancel()
 
@@ -74,20 +85,20 @@ func main() {
 			return
 		}
 
-		// 2) 配额检查（本地 gRPC，800ms）
+		// 2) 预占配额（本地 gRPC，800ms）
 		tctx, tcancel := context.WithTimeout(root, 800*time.Millisecond)
 		defer tcancel()
 
-		const perCallTokens = int32(50) // 每次先按 50 token 计；后续可改为真实用量
-		tr, err := tokenCli.CheckAndInc(tctx, &pb.TokenRequest{
-			UserId: req.UserID, Tokens: perCallTokens,
+		const preReserve = int32(200) // 先预占200 tokens，调用后再用真实用量对齐
+		tr1, err := tokenCli.CheckAndInc(tctx, &pb.TokenRequest{
+			UserId: req.UserID, Tokens: preReserve,
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "token failed", "detail": err.Error()})
 			return
 		}
-		if !tr.GetAllowed() {
-			c.JSON(http.StatusTooManyRequests, gin.H{"error": "quota exceeded", "remaining": tr.GetRemaining()})
+		if !tr1.GetAllowed() {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "quota exceeded", "remaining": tr1.GetRemaining()})
 			return
 		}
 
@@ -99,20 +110,58 @@ func main() {
 			UserId: req.UserID, Text: fr.GetCleaned(),
 		})
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "llm failed", "detail": err.Error()})
+			msg := err.Error()
+			// 额度不足（需要充值或开通计费）
+			if strings.Contains(msg, "insufficient_quota") {
+				c.JSON(http.StatusPaymentRequired, gin.H{
+					"error":  "insufficient_quota",
+					"detail": "OpenAI 项目无可用额度：请在 Billing 中添加支付方式或购买 credits 后再试",
+				})
+				return
+			}
+			// 速率限制（429）
+			if strings.Contains(msg, "Too Many Requests") || strings.Contains(msg, "rate limit") {
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error":  "rate_limited",
+					"detail": "触发速率限制，稍后重试或降低并发/频率",
+				})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "llm failed", "detail": msg})
 			return
 		}
 
-		// 4) 返回结果
+		// 4) 依据真实用量对齐配额（LLM 返回 usage.total_tokens）
+		finalRemaining := tr1.GetRemaining()
+		if tt := lr.GetTotalTokens(); tt > 0 {
+			delta := tt - preReserve // 正数=补扣，负数=回冲
+			if delta != 0 {
+				actx, acancel := context.WithTimeout(root, 800*time.Millisecond)
+				defer acancel()
+				if tr2, err := tokenCli.CheckAndInc(actx, &pb.TokenRequest{
+					UserId: req.UserID, Tokens: delta,
+				}); err == nil {
+					finalRemaining = tr2.GetRemaining()
+				}
+				// 如果对齐失败，不影响本次请求成功返回；remaining 使用预占时的值
+			}
+		}
+
+		// 5) 返回结果（包含 usage 便于对账/展示）
 		c.JSON(http.StatusOK, gin.H{
-			"cleaned":   fr.GetCleaned(),
-			"reply":     lr.GetReply(),
-			"remaining": tr.GetRemaining(),
+			"cleaned": fr.GetCleaned(),
+			"reply":   lr.GetReply(),
+			"usage": gin.H{
+				"prompt_tokens":     lr.GetPromptTokens(),
+				"completion_tokens": lr.GetCompletionTokens(),
+				"total_tokens":      lr.GetTotalTokens(),
+			},
+			"remaining": finalRemaining,
 		})
 	})
 
 	// 启动 HTTP 网关
-	// 访问示例：
+	// 示例：
 	// curl -s -X POST http://localhost:8080/chat \
 	//   -H 'Content-Type: application/json' \
 	//   -d '{"user_id":"u1","text":"Hello   world   from   Go!"}'

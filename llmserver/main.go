@@ -45,11 +45,26 @@ func (s *server) Generate(ctx context.Context, in *pb.ChatRequest) (*pb.ChatResp
 	if err != nil {
 		return nil, err
 	}
+
 	reply := ""
 	if len(resp.Choices) > 0 {
 		reply = resp.Choices[0].Message.Content
 	}
-	return &pb.ChatResponse{Reply: reply}, nil
+
+	// 安全地读取 usage
+	var pt, ct, tt int32
+	if resp.Usage.PromptTokens != 0 || resp.Usage.CompletionTokens != 0 || resp.Usage.TotalTokens != 0 {
+		pt = int32(resp.Usage.PromptTokens)
+		ct = int32(resp.Usage.CompletionTokens)
+		tt = int32(resp.Usage.TotalTokens)
+	}
+
+	return &pb.ChatResponse{
+		Reply:            reply,
+		PromptTokens:     pt,
+		CompletionTokens: ct,
+		TotalTokens:      tt,
+	}, nil
 }
 
 func main() {
